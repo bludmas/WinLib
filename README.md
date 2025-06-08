@@ -2,7 +2,7 @@
 ## What is this?
 A simple library module made for roblox
 
-It has: Discord webhook, Game and Math functions.
+It has: Discord webhook, Game, AI and Math functions.
 
 ## Why?
 
