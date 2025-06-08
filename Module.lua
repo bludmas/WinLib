@@ -28,6 +28,8 @@ local Players = game:GetService("Players")
 local Lib = {
 	Debugging = true;
 	CheckForVersions = true;
+	
+	AI_ClearMessagesAfter = 20; -- To solve some issues
 }
 
 --// VARIABLES
@@ -44,9 +46,12 @@ local StudConverter = 0.28
 local FootConverter = 3.281
 local InchesConverter = 39.37
 
+local ApplicJSON = Enum.HttpContentType.ApplicationJson
+
 --// TYPES
 
 type DiscordWebhook = Types.DiscordWebhook
+type AI = Types.AI
 
 --// FUNCTIONS
 
@@ -81,6 +86,25 @@ local function CheckVersion()
 	else
 		warn("Something went wrong trying to check for the version.")
 	end
+end
+
+local function TableIsEmpty(Tb: { any })
+	return next(Tb) == nil
+end
+
+local function GetAmountKeysAndFirstKeyStored(Tb: { any }): (number, any | nil)
+	if TableIsEmpty(Tb) then return 0 end
+	
+	local I = 0
+	local F = nil
+	for n, v in pairs(Tb) do
+		I += 1
+		if I == 1 then
+			F = n
+		end
+	end
+	
+	return I, F
 end
 
 --\\ PUBLIC
@@ -119,6 +143,131 @@ function Lib.WebhookPost(Webhook: DiscordWebhook, Message: string): (boolean, st
 	end)
 	
 	return Success, Response
+end
+
+--[[
+AI Creating (using Gemini 1.5 Flash) function
+
+Get your API key here: https://aistudio.google.com/app/apikey
+
+TextFormat Arguments:
+1 - Instructions (aka Personality)
+2 - History/Memory (in text)
+3 - The messager, who sent it.
+4 - The prompt
+
+@param APIKey - The API key
+@param Instructions - The AI instructions (or aka personality) to set as. This is optional.
+@param TextFormat - How should the text be formatted as? (optional)
+]]
+function Lib.CreateAI(APIKey: string, Instructions: string | nil, TextFormat: string | nil): AI | nil
+	if not APIKey or type(APIKey) ~= "string" then
+		warn("No API key/Invalid API Key.")
+		return
+	end
+	if Instructions and (Instructions == "" or type(Instructions) ~= "string") then
+		if Instructions ~= "" then
+			warn("Invalid Instructions.")
+		end
+		Instructions = "You are an helpful AI assistant."
+	elseif not Instructions then
+		Debug("Default instructions selected.")
+		Instructions = "You are an helpful AI assistant."
+	end
+	
+	local NewAI: AI = {
+		History = {};
+		URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key="..APIKey,
+		Instructions = Instructions or "You are an helpful AI assistant."; -- to get rid of a annoying yellow checkmark
+		MainFormat = TextFormat or "[Instructions] %s \n [History] %s \n [Current Interaction] %s tells you: %s"
+	}
+	
+	return NewAI
+end
+
+--[[
+AI Generating (using Gemini 1.5 Flash) function
+
+@param AI - The variable of AI type
+@param Prompt - What should the prompt be?
+@param AddToHistory - Should this be added to the memory/history? (optional)
+@param Messager - Who said the prompt? An addition to "AddToHistory". (optional)
+]]
+function Lib.GenerateAI(AI: AI, Prompt: string, AddToHistory: boolean | nil, Messager: string | nil): string | nil
+	if AI == nil then
+		warn("AI is nil.")
+		return
+	elseif Prompt == "" then
+		warn("Prompt cannot be empty.")
+		return
+	elseif Messager == "" then
+		warn("Messager cannot be empty.")
+		return
+	end
+	
+	local HistoryText = ""
+	
+	if TableIsEmpty(AI.History) then
+		Debug("History is empty, Set to \"None\"")
+		HistoryText = "None"
+	else
+		for i, v in pairs(AI.History) do
+			local N1 = v[1]
+			local N2 = v[2]
+			
+			if N1 and N2 then
+				HistoryText = Format("%s\n[Timestamp: +%is CPU Time]\n%s\n%s", HistoryText, i, N1, N2)
+			end
+		end
+	end
+	
+	local Len, First = GetAmountKeysAndFirstKeyStored(AI.History)
+	if Len >= Lib.AI_ClearMessagesAfter and First then
+		Debug("Len is over limit, deleting first key.")
+		AI.History[First] = nil
+	end
+	
+	local Text = Format(AI.MainFormat, AI.Instructions, HistoryText, Messager or "Someone", Prompt)
+
+	local RequestBody = HttpService:JSONEncode({
+		contents = {
+			{
+				parts = {
+					{ text = Text}
+				}
+			}
+		}
+	})
+
+	local S, R = pcall(function()
+		return HttpService:PostAsync(AI.URL, RequestBody, ApplicJSON, false)
+	end)
+
+	-- Handle the response
+	if S then
+		local Decoded = HttpService:JSONDecode(R)
+
+		local FinalMessage
+
+		for index,text in pairs(Decoded["candidates"][1]["content"]["parts"][1]) do
+			FinalMessage = text
+		end
+		
+		if AddToHistory then
+			AI.History[time()] = {
+				[1] = Format("User (%s): %s", Messager or "Someone", Prompt);
+				[2] = Format("You: %s", FinalMessage);
+			}
+		end
+		
+		Debug(FinalMessage)
+		
+		return FinalMessage
+	else
+		warn("A problem has occured while trying to AI generate text: "..R)
+	end
+	
+	return "HTTP Error"
 end
 
 -- Simple Game Functions
@@ -284,6 +433,43 @@ function Lib.IsCloseToPlayers(Player: Player, Dist: number)
 	end
 
 	return IsClose
+end
+
+--[[
+	IsTableEmpty Function
+	
+	Returns a boolean if a table is empty (Since # doesn't work sometimes)
+	
+	@param Table - The table to check if empty
+]]
+function Lib.IsTableEmpty(Table: { any })
+	return TableIsEmpty(Table)
+end
+
+--[[
+	GetAmountKeysAndFirstKeyStored Function (long name huh)
+	
+	Useful for deleting old logs or removing keys (with random numbers/strings) from tables whenever its above a limit.
+	
+	Returns 2 values:
+	1 - Is the amount of keys stored
+	2 - The first key stored
+	
+	@param Table - The table to get amount of keys and first key stored
+]]
+function Lib.GetAmountKeysAndFirstKeyStored(Table: { any }): ( number, any | nil )
+	return GetAmountKeysAndFirstKeyStored(Table)
+end
+
+--[[
+	RemoveNewLines Function
+	
+	Removes newlines from texts
+	
+	@param Text - The text to remove new lines
+]]
+function Lib.RemoveNewLines(Text: string)
+	return Text:gsub("[\n\r]", " ") 
 end
 
 -- Mathematics / Physics
