@@ -39,6 +39,9 @@ local Types = require(script.Types)
 local Format, Yield, require, Char, ArrayInsert = string.format, task.wait, require, string.char, table.insert
 local Traceback = debug.traceback
 local Huge = math.huge
+local Randomizer = Random.new()
+
+local RoundEquation = 2^52 + 2^51
 
 local DefaultParams = RaycastParams.new()
 
@@ -113,6 +116,7 @@ end
 
 --[[
 Webhook Creating function
+
 You should note that you can find the ID and Token from your webhook's url
 Remember to keep the url safe!
 
@@ -274,7 +278,8 @@ end
 
 --[[
 Attempting Function
-* Repeats a process over and over again until its succesfull or reached max attempts.
+
+Repeats a process over and over again until its succesfull or reached max attempts.
 
 @param Function - Your function that should run
 @param DelayTime - The delaytime between attempts (DEFAULT: 1)
@@ -313,15 +318,120 @@ function Lib.AttemptFunction(Function: () -> any, DelayTime: number, MaxAttempts
 end
 
 --[[
-In Sight Function
-* Sees if a target part is in the LOS (Line Of Sight) of something else
+	GetRandomFromArray Function
+	
+	Gets a random value stored within a array.
+	If your array has string keys, consider using GetRandomFromArrayWithStringKey
+	
+	@param Array - The array to get a random value from
+]]
+function Lib.GetRandomFromArray(Array: { any })
+	return Array[Randomizer:NextInteger(1, #Array)]
+end
 
-Note: DotProduct needs to be in the range -1 and 1
+--[[
+	GetRandomFromArrayWithStringKey Function
+	
+	Gets a random value stored within a array with string keys.
+	Also returns the name.
 
-@param Viewer - The origin
-@param Target - The target
-@param MaxDist - Maximum distance (Default: math.huge)
-@param DotProduct - The view threshold that the target needs to be in (Default: nil)
+	@param Array - The array to get a random value from
+]]
+function Lib.GetRandomFromArrayWithStringKey(Array: { any }): (string, any)
+	local I = 0
+	local F = {}
+	for n, v in pairs(Array) do
+		if n and type(n) == "string" then
+			I += 1
+			F[I] = {n, v}
+		else
+			warn("There's a value without a string key, what a messy array you got.")
+		end
+	end
+	
+	local RandomV = F[Randomizer:NextInteger(1, #F)]
+	if RandomV and #RandomV >= 2 then
+		return RandomV[1], RandomV[2]
+	end
+	
+	return "nil", nil
+end
+
+--[[
+	GetChildrenOfClass Function
+	
+	Gets children from a instance that are of a type.
+	
+	@param Obj - The instance to get the children of type.
+	@param ClassName - The class name to insert into the table.
+	@param GetDescendantsInstead - Get descendants instead of children? (OPTIONAL)
+]]
+function Lib.GetChildrenOfClass(Obj: Instance, ClassName: string, GetDescendantsInstead: boolean | nil): { Instance }
+	local Return = {}
+	local Children -- tnickles reference
+	if GetDescendantsInstead then
+		Children = Obj:GetDescendants()
+	else
+		Children = Obj:GetChildren()
+	end
+	
+	if Lib.IsTableEmpty(Children) then
+		return Return
+	end
+	
+	for _, v in pairs(Children) do
+		if v and (v:IsA(ClassName) or v.ClassName == ClassName) then
+			ArrayInsert(Return, v)
+		end
+	end
+	
+	return Return
+end
+
+--[[
+	PlayRandomSoundInInstance Function
+	
+	Plays a random sound within a instance
+	
+	@param Obj - The instance to play a random sound from
+	@param GetDescendantsInstead - Get descendants instead of children? (OPTIONAL)
+	@param StopAllSounds - Should other sounds be stopped for this one to be played?
+]]
+function Lib.PlayRandomSoundInInstance(Obj: Instance, GetDescendantsInstead: boolean | nil, StopAllSounds: boolean | nil)
+	local Sounds = Lib.GetChildrenOfClass(Obj, "Sound", GetDescendantsInstead)
+	
+	if Sounds and not Lib.IsTableEmpty(Sounds) then
+		if StopAllSounds then
+			for _, v in pairs(Sounds) do
+				pcall(function() -- PCalling because i dont wanna break your code :(
+					if v and v:IsA("Sound") and v.IsPlaying then
+						v:Stop()
+					end
+				end)
+			end
+		end
+		
+		local RandomSound = Lib.GetRandomFromArray(Sounds)
+		
+		if RandomSound then
+			RandomSound:Play()
+		end
+	else
+		Debug("No Sounds found.", true)
+	end
+end
+
+--[[
+	In Sight Function
+
+	Sees if a target part is in the LOS (Line Of Sight) of something else
+
+	Note: DotProduct needs to be in the range -1 and 1
+
+	@param Viewer - The origin
+	@param Target - The target
+	@param MaxDist - Maximum distance (Default: math.huge)
+	@param DotProduct - The view threshold that the target needs to be in (Default: nil)
 ]]
 function Lib.InSight(Viewer: BasePart, Target: BasePart, MaxDist: number, DotProduct: number, RayParams: RaycastParams)
 	assert(Viewer, "No Viewer Part.")
@@ -475,10 +585,24 @@ end
 -- Mathematics / Physics
 
 --[[
-Sum Function
-* Calculates the sum of every number in a table
+	RoundWithDecimalPlaces Function
+	
+	Rounds a number (with the extra addition of decimal places)
+	
+	@param N - Number to round
+	@param DecimalPlaces - How many decimal places for there to be
+]]
+function Lib.RoundWithDecimalPlaces(N: number, DecimalPlaces: number)
+	local Scale = 10^DecimalPlaces
+	return ((N * Scale + RoundEquation) - RoundEquation) / Scale
+end
 
-@param Table - The array of numbers
+--[[
+	Sum Function
+	
+	Calculates the sum of every number in a table
+
+	@param Table - The array of numbers
 ]]
 function Lib.Sum(Table: { number }): number
 	local I = 0
@@ -489,20 +613,22 @@ function Lib.Sum(Table: { number }): number
 end
 
 --[[
-Mean Function
-* Calculates the "average" for a table of numbers (Useful for calculating grades)
+	Mean Function
+	
+	Calculates the "average" for a table of numbers (Useful for calculating grades)
 
-@param Table - The array of numbers
+	@param Table - The array of numbers
 ]]
 function Lib.Mean(Table: { number }): number
 	return Lib.Sum(Table)/#Table
 end
 
 --[[
-IsOdd Function
-* Gives you a boolean if a number is odd or even.
+	IsOdd Function
+	
+	Gives you a boolean if a number is odd or even.
 
-@param Number - The number (yeah duh)
+	@param Number - The number (yeah duh)
 ]]
 function Lib.IsOdd(Number: number)
 	if Number % 2 == 0 then
@@ -513,11 +639,12 @@ function Lib.IsOdd(Number: number)
 end
 
 --[[
-DividesWith Function
-* Gives you a boolean if a number Divides with another number
+	DividesWith Function
+	
+	Gives you a boolean if a number Divides with another number
 
-@param Number - The first number
-@param Divider - The number that the first number has to divide with
+	@param Number - The first number
+	@param Divider - The number that the first number has to divide with
 ]]
 function Lib.DividesWith(Number: number, Divider: number)
 	if Number % Divider == 0 then
@@ -528,12 +655,13 @@ function Lib.DividesWith(Number: number, Divider: number)
 end
 
 --[[
-IsPrimeNumber Function
-* Checks if a number is a prime number
+	IsPrimeNumber Function
+	
+	Checks if a number is a prime number
 
-(WARNING: PERFOMANCE HEAVY ON HIGHER NUMBERS)
+	(WARNING: PERFOMANCE HEAVY ON HIGHER NUMBERS)
 
-@param Number - The number to check
+	@param Number - The number to check
 ]]
 function Lib.IsPrimeNumber(Number: number)
 	if Number <= 1 then
@@ -550,12 +678,13 @@ function Lib.IsPrimeNumber(Number: number)
 end
 
 --[[
-Factorial Function
-* Calculates the Factorial of a number
+	Factorial Function
 
-(WARNING: PERFOMANCE HEAVY ON HIGHER NUMBERS)
+	Calculates the Factorial of a number
 
-@param Number - The number to calculate
+	(WARNING: PERFOMANCE HEAVY ON HIGHER NUMBERS)
+
+	@param Number - The number to calculate
 ]]
 function Lib.Factorial(Number: number)
 	local R = 1
@@ -566,39 +695,42 @@ function Lib.Factorial(Number: number)
 end
 
 --[[
-GetSpeed Function
-* Calculates the speed based on time and distance
+	GetSpeed Function
+	
+	Calculates the speed based on time and distance
 
-ProTip: Time is in seconds and Distance is in meters, therefore the speed is in m/s
+	ProTip: Time is in seconds and Distance is in meters, therefore the speed is in m/s
 
-@param Time - The time elapsed
-@param Distance - The distance that took in the time.
+	@param Time - The time elapsed
+	@param Distance - The distance that took in the time.
 ]]
 function Lib.GetSpeed(Time: number, Distance: number): number
 	return Distance / Time
 end
 
 --[[
-GetDistance Function
-* Calculates the distance based on speed and time
+	GetDistance Function
 
-ProTip: Speed is in m/s, therefore the distance is in meters
+	Calculates the distance based on speed and time
 
-@param Time - The time elapsed
-@param Speed - The speed the object was in
+	ProTip: Speed is in m/s, therefore the distance is in meters
+
+	@param Time - The time elapsed
+	@param Speed - The speed the object was in
 ]]
 function Lib.GetDistance(Time: number, Speed: number): number
 	return Speed * Time
 end
 
 --[[
-GetTime Function
-* Calculates the time elapsed based on speed and distance
+	GetTime Function
+	
+	Calculates the time elapsed based on speed and distance
 
-ProTip: Speed is in m/s, therefore time is in seconds.
+	ProTip: Speed is in m/s, therefore time is in seconds.
 
-@param Distance - The distance
-@param Speed - The speed the object was in
+	@param Distance - The distance
+	@param Speed - The speed the object was in
 ]]
 function Lib.GetTime(Distance: number, Speed: number): number
 	return Distance / Speed
@@ -607,71 +739,78 @@ end
 -- Converters
 
 --[[
-StudsToMetres Function
-* Turns ROBLOX Studs into Metres
+	StudsToMetres Function
 
-@param Studs - The amount of studs to turn into metres
+	Turns ROBLOX Studs into Metres
+
+	@param Studs - The amount of studs to turn into metres
 ]]
 function Lib.StudsToMetres(Studs: number)
 	return Studs * StudConverter
 end
 
 --[[
-MetresToStuds Function
-* Turns Metres into ROBLOX Studs
+	MetresToStuds Function
 
-@param Metres - The amount of metres to turn into studs
+	Turns Metres into ROBLOX Studs
+
+	@param Metres - The amount of metres to turn into studs
 ]]
 function Lib.MetresToStuds(Metres: number)
 	return Metres / StudConverter
 end
 
 --[[
-FootToMetres Function
-* Turns Foot into metres
+	FootToMetres Function
 
-@param Foot - The amount of Foot to turn into Metres
+	Turns Foot into metres
+
+	@param Foot - The amount of Foot to turn into Metres
 ]]
 function Lib.FootToMetres(Foot: number)
 	return Foot / FootConverter
 end
 
 --[[
-MetresToFoot Function
-* Turns Metres into foot
+	MetresToFoot Function
 
-@param Metres - The amount of Metres to turn into Foot
+	Turns Metres into foot
+
+	@param Metres - The amount of Metres to turn into Foot
 ]]
 function Lib.MetresToFoot(Metres: number)
 	return Metres * FootConverter
 end
 
 --[[
-InchesToMetres Function
-* Turns Inches into metres
+	InchesToMetres Function
 
-@param Inches - The amount of Inches to turn into Metres
+	Turns Inches into metres
+
+	@param Inches - The amount of Inches to turn into Metres
 ]]
 function Lib.InchesToMetres(Inches: number)
 	return Inches / InchesConverter
 end
 
 --[[
-MetresToInches Function
-* Turns Metres into Inches
+	MetresToInches Function
 
-@param Metres - The amount of Metres to turn into Inches
+	Turns Metres into Inches
+
+	@param Metres - The amount of Metres to turn into Inches
 ]]
 function Lib.MetresToInches(Metres: number)
 	return Metres * InchesConverter
 end
 
 --[[
-HeightInMetres Function
-* Turns Height (Foot and Inches) into Metres
+	HeightInMetres Function
 
-@param Foot - First Number in your height
-@param Inches - Second Number in your height
+	Turns Height (Foot and Inches) into Metres
+
+	@param Foot - First Number in your height
+	@param Inches - Second Number in your height
 ]]
 function Lib.HeightInMetres(Foot: number, Inches: number)
 	return Lib.FootToMetres(Foot)+Lib.InchesToMetres(Inches)
@@ -679,6 +818,14 @@ end
 
 --// RETURN
 
-if Lib.CheckForVersions then task.spawn(CheckVersion) end
+if Lib.CheckForVersions then 
+	local s, r = pcall(function() 
+		task.spawn(CheckVersion) 
+	end) 
+	
+	if not s then
+		warn(r)
+	end
+end
 
 return Lib
