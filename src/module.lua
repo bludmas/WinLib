@@ -22,6 +22,7 @@ Created by @WindowUser2
 
 local HttpService = game:GetService("HttpService")
 local Players = game:GetService("Players")
+local Lighting = game:GetService("Lighting")
 
 --// MODULE
 
@@ -42,10 +43,11 @@ local TeamNames = Dict:Get("TeamNames")
 --// VARIABLES
 
 local Format, Yield, require, Char, ArrayInsert = string.format, task.wait, require, string.char, table.insert
-local Traceback = debug.traceback
-local Huge = math.huge
+local Traceback, RGB = debug.traceback, Color3.fromRGB
+local Huge, Vector, Cosine, Sine = math.huge, Vector3.new, math.cos, math.sin
 local Randomizer = Random.new()
 
+local Tau = 2*math.pi
 local RoundEquation = 2^52 + 2^51
 
 local DefaultParams = RaycastParams.new()
@@ -53,6 +55,8 @@ local DefaultParams = RaycastParams.new()
 local StudConverter = 0.28
 local FootConverter = 3.281
 local InchesConverter = 39.37
+
+local StalkDir = Vector3.new(0, -10e4, 0)
 
 local ApplicJSON = Enum.HttpContentType.ApplicationJson
 
@@ -80,6 +84,9 @@ local function Debug(Message: string, TracebackMsg: boolean | nil)
 end
 
 local function CheckVersion()
+	if script:HasTag("VersionChecked") then
+		return
+	end
 	local CurrentVersion = script:GetAttribute("Version")
 	
 	if not CurrentVersion then
@@ -91,10 +98,11 @@ local function CheckVersion()
 	
 	if ModuleVersion and type(ModuleVersion) == "string" then
 		if CurrentVersion == ModuleVersion then
-			Debug("No new updates for this module.", true)
+			Debug("No new updates for this module.", false)
 		else
 			warn(Format("New update! (%s) Please update the module named \"WinLib\".", ModuleVersion))
 		end
+		script:AddTag("VersionChecked")
 	else
 		warn("Something went wrong trying to check for the version.")
 	end
@@ -636,7 +644,110 @@ function Lib.RemoveNewLines(Text: string)
 	return Text:gsub("[\n\r]", " ") 
 end
 
+--[[
+	IsNight Function
+	
+	Returns boolean if its considered night
+	Condition: Time is above 18 or below 6
+]]
+function Lib.IsNight()
+	return Lighting.ClockTime >= 18 or Lighting.ClockTime < 6
+end
+
+--[[
+	IsDay Function
+	
+	Returns boolean if its considered day (Reuses IsNightFunction)
+]]
+function Lib.IsDay()
+	return not Lib.IsNight() -- too smart bro
+end
+
+--[[
+	GetBehindPos Function
+	
+	Returns CFrame position, meant to be behind another position
+	
+	@param Origin - The original Position
+	@param Offset - How far should the returned CFrame be?
+]]
+function Lib.GetBehindPos(Origin: CFrame, Offset: number)
+	assert(Origin, "No origin.")
+	assert(Offset, "No offset.")
+	
+	return Origin * CFrame.new(0,0,Offset)
+end
+
+--[[
+	MixColors Function
+	
+	Returns a Color3 Value of 2 colors mixed with a specified ratio/percent
+	
+	@param Color1 - First Color
+	@param Color2 - Second color
+	@param Ratio - The ratio between the colors (Ex: if its 0.7 then 30% the first and 70% the other)
+]]
+function Lib.MixColors(Color1: Color3, Color2: Color3, Ratio: number)
+	local Mix
+	local RM = (1 - Ratio)
+	local R = (Color1.R * 255) * RM + (Color2.R * 255) * Ratio
+	local G  = (Color1.G * 255) * RM + (Color2.G * 255) * Ratio
+	local B = (Color1.B * 255) * RM + (Color2.B * 255) * Ratio
+	return RGB(R,G,B)
+end
+
 -- Random
+
+--[[
+	GetRandomPosInCircle Function
+	
+	Returns a Vector3 position meant to be in a circle
+	Can be also used for horror, or "innocent" games
+	Also has "collision support" to always be ontop parts
+	
+	Dist parameter should be like this:
+	Dist = {
+		50, -- Min Radius of circle
+		150, -- Max Radius of circle
+		500 -- Starting Y pos (works like a offset and is for collisionsupport)
+	}
+	
+	@param StartPoint - The original position
+	@param Dist - Optional distance array (Min, Max and StartYpos) to keep from starting point
+	@param RayParams - Optional raycast params
+]]
+function Lib.GetRandomPosInCircle(StartPoint: Vector3, Dist: { number } | nil, RayParams: RaycastParams?)
+	assert(StartPoint, "No original position.")
+	if Dist == nil or type(Dist) ~= "table" then
+		Dist = {
+			50,
+			150,
+			500
+		}
+	end
+	
+	assert(Dist, "Dist is not real anymore.") -- Rare error
+
+	local Negative1 = Randomizer:NextInteger(1, 2) == 1 and -1 or 1
+	local Negative2 = Randomizer:NextInteger(1, 2) == 2 and -1 or 1
+	
+	local R = Randomizer:NextNumber(Dist[1], Dist[2])
+	
+	local theta = Randomizer:NextNumber(0, Tau)
+
+	local X = StartPoint.X + R * Cosine(theta)
+	local Z = StartPoint.Z + R * Sine(theta)
+	
+	local Offset = Vector(X * Negative1, Dist[3], Z * Negative2)
+
+	local Origin = StartPoint + Offset
+	local Result = workspace:Raycast(Origin, StalkDir, RayParams or DefaultParams)
+	if Result then
+		return Result.Position
+	end
+
+	return Origin
+end
 
 --[[
 	RandomName Function
@@ -652,8 +763,7 @@ function Lib.RandomName(Gender: string | nil, IncludeSurname: boolean | nil): st
 	end
 	
 	local MainArray
-	
-	-- Don't get mad over me for the next 8 lines of code (iykwim)
+
 	if Gender == "Male" then
 		MainArray = MaleNames
 	elseif Gender == "Female" then
