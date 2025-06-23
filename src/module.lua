@@ -30,7 +30,7 @@ local Lib = {
 	Debugging = true;
 	CheckForVersions = true;
 	
-	AI_ClearMessagesAfter = 20; -- To solve some issues
+	AI_ClearMessagesAfter = 500; -- To solve some issues
 }
 
 --// MODULES
@@ -42,9 +42,9 @@ local TeamNames = Dict:Get("TeamNames")
 
 --// VARIABLES
 
-local Format, Yield, require, Char, ArrayInsert = string.format, task.wait, require, string.char, table.insert
+local Format, Yield, require, Char, ArrayInsert, Match = string.format, task.wait, require, string.char, table.insert, string.match
 local Traceback, RGB = debug.traceback, Color3.fromRGB
-local Huge, Vector, Cosine, Sine = math.huge, Vector3.new, math.cos, math.sin
+local Huge, Vector, Cosine, Sine, ACosine, SquareRoot = math.huge, Vector3.new, math.cos, math.sin, math.acos, math.sqrt
 local Randomizer = Random.new()
 
 local Tau = 2*math.pi
@@ -495,10 +495,10 @@ end
 	@param MaxDist - Maximum distance (Default: math.huge)
 	@param DotProduct - The view threshold that the target needs to be in (Default: nil)
 ]]
-function Lib.InSight(Viewer: BasePart, Target: BasePart, MaxDist: number, DotProduct: number, RayParams: RaycastParams)
+function Lib.InSight(Viewer: BasePart, Target: BasePart, MaxDist: number, DotProduct: number?, RayParams: RaycastParams)
 	assert(Viewer, "No Viewer Part.")
 	assert(Target, "No Target Part.")
-	
+
 	if not MaxDist then MaxDist = Huge end
 
 	local CFrameOfOrigin = Viewer.CFrame
@@ -508,7 +508,7 @@ function Lib.InSight(Viewer: BasePart, Target: BasePart, MaxDist: number, DotPro
 	local Result = workspace:Raycast(Origin, Direction, RayParams or DefaultParams)
 	if Result then	
 		local Hit = Result.Instance
-		if Hit == Origin or Hit:IsDescendantOf(Viewer.Parent) then
+		if Hit == Origin or Hit:IsDescendantOf(Target.Parent) then
 			if DotProduct ~= nil and type(DotProduct) == "number" then
 				local MainUnit = Direction.Unit
 				local NewDotProduct = CFrameOfOrigin.LookVector:Dot(MainUnit)
@@ -521,7 +521,7 @@ function Lib.InSight(Viewer: BasePart, Target: BasePart, MaxDist: number, DotPro
 			return true
 		end
 	end
-	
+
 	return false
 end
 
@@ -534,9 +534,16 @@ end
 	@param UserID - The ID of the player
 ]]
 function Lib.TransformWithUserID(Humanoid: Humanoid, UserID: number)
-	local Descript = Players:GetHumanoidDescriptionFromUserId(UserID)
+	local Descript
+	local S, R = pcall(function()
+		Descript =  Players:GetHumanoidDescriptionFromUserId(UserID)
+	end)
 	
-	Humanoid:ApplyDescription(Descript)
+	if S and Descript then
+		Humanoid:ApplyDescription(Descript)
+	else
+		Debug(R, true)
+	end
 end
 
 --[[
@@ -696,6 +703,34 @@ function Lib.MixColors(Color1: Color3, Color2: Color3, Ratio: number)
 	return RGB(R,G,B)
 end
 
+--[[
+	FindInstancesClosestByName Function
+	
+	Returns an array of instances whose names match a string
+	
+	@param Parent - The parent, The instance to go through the children
+	@param Name - The string the instance's name need to match, also known as "pattern"
+	@param LowerStrings - Optional boolean to lower all of the strings, so even if it has a uppercase T it still gets added in
+	@param DescendantsInstead - Get descendants instead of children.
+]]
+function Lib.FindInstancesClosestByName(Parent: Instance, Name: string, LowerStrings: boolean | nil, DescendantsInstead: boolean | nil): { Instance }
+	local L = {}
+	
+	if LowerStrings then
+		Name = Name:lower()
+	end
+	
+	local ParentList = DescendantsInstead and Parent:GetDescendants() or Parent:GetChildren()
+	
+	for _, v in pairs(ParentList) do
+		if v and Match(LowerStrings and v.Name:lower() or v.Name, Name) ~= nil then
+			ArrayInsert(L, v)
+		end
+	end
+	
+	return L
+end
+
 -- Random
 
 --[[
@@ -727,9 +762,6 @@ function Lib.GetRandomPosInCircle(StartPoint: Vector3, Dist: { number } | nil, R
 	end
 	
 	assert(Dist, "Dist is not real anymore.") -- Rare error
-
-	local Negative1 = Randomizer:NextInteger(1, 2) == 1 and -1 or 1
-	local Negative2 = Randomizer:NextInteger(1, 2) == 2 and -1 or 1
 	
 	local R = Randomizer:NextNumber(Dist[1], Dist[2])
 	
@@ -738,9 +770,8 @@ function Lib.GetRandomPosInCircle(StartPoint: Vector3, Dist: { number } | nil, R
 	local X = StartPoint.X + R * Cosine(theta)
 	local Z = StartPoint.Z + R * Sine(theta)
 	
-	local Offset = Vector(X * Negative1, Dist[3], Z * Negative2)
+	local Origin = Vector(X, Dist[3], Z)
 
-	local Origin = StartPoint + Offset
 	local Result = workspace:Raycast(Origin, StalkDir, RayParams or DefaultParams)
 	if Result then
 		return Result.Position
@@ -913,6 +944,46 @@ function Lib.Factorial(Number: number)
 		R *= i
 	end
 	return R
+end
+
+--[[
+	GetAngleBetween3Points Function
+
+	Calculates the angle between 3 points.
+
+	@param Pos1 - First position.
+	@param Pos2 - Second position, also known as the "peak" of the angle
+	@param Pos3 - Third and last position.
+]]
+function Lib.GetAngleBetween3Points(Pos1: Vector3, Pos2: Vector3, Pos3: Vector3)
+	if Pos1 and typeof(Pos1) == "Vector3" and Pos2 and typeof(Pos2) == "Vector3" and Pos3 and typeof(Pos3) == "Vector3" then
+		return ACosine((Pos2 - Pos1).Unit:Dot((Pos3 - Pos1).Unit))
+	else
+		warn("Invalid Arguments.")
+		return 0
+	end
+end
+
+--[[
+	Quadratic Function
+
+	Calculates the quadratic of 3 numbers so you don't have to (how nice from me) 
+]]
+function Lib.Quadratic(a: number, b: number, c: number): (number, number)
+	local discriminant = b^2 - 4*a*c
+	
+	local root1
+	local root2
+
+	if discriminant >= 0 then
+		root1 = (-b + discriminant ^ 0.5) / (2 * a)
+		root2 = (-b - discriminant ^ 0.5) / (2 * a)
+	else
+		root1 = (-b + SquareRoot(discriminant)) / (2 * a)
+		root2 = (-b - SquareRoot(discriminant)) / (2 * a)
+	end
+	
+	return root1, root2
 end
 
 --[[
